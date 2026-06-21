@@ -1,6 +1,6 @@
 # Mimo-Bot
 
-Проект на Rust для запуска ботов (любое количество) на серверы Minecraft Pocket Edition 1.1.5
+— Проект на Rust для запуска ботов (любое количество) на серверы Minecraft Pocket Edition 1.1.5
 
 ## Запуск
 
@@ -33,4 +33,4 @@ cd Mimo-Bot-main && cargo build --release
 4. Запустить.
 
 ## Форк
-Основан на проекте [calvyn-mcpe-bot](https://github.com/zanderrroff/calvyn-mcpe-bot) от zanderrroff.
+— Mimo-Bot был основан на проекте [calvyn-mcpe-bot](https://github.com/zanderrroff/calvyn-mcpe-bot) от zanderrroff.
