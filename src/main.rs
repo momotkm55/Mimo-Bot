@@ -1,5 +1,5 @@
-use calvyn_mcpe_bot::proto::{ms_now, VER};
-use calvyn_mcpe_bot::{run_client, Config};
+use mimo_bot::proto::{ms_now, VER};
+use mimo_bot::{run_client, Config};
 use std::io;
 
 fn main() -> io::Result<()> {
@@ -15,7 +15,7 @@ fn parse_args() -> Config {
     let mut cfg = Config {
         host: String::new(),
         port: 19132,
-        name: format!("CalvynBot{:04}", ms_now() % 10_000),
+        name: format!("MimoBot{:04}", ms_now() % 10_000),
         protocol: VER,
         multi_bot: false,
         multi_bot_count: 10,
