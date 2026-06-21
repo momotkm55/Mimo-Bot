@@ -1,0 +1,36 @@
+[package]
+name = "mimo-bot"
+version = "2.0.0"
+edition = "2021"
+description = "Проект на Rust для запуска ботов на серверах Minecraft Pocket Edition 1.1.5"
+authors = ["momotkm55"]
+repository = "https://github.com/momotkm55/mimo-bot"
+keywords = ["minecraft", "mcpe", "raknet", "bedrock"]
+categories = ["command-line-utilities", "network-programming"]
+
+[[bin]]
+name = "bot"
+path = "src/main.rs"
+
+[lib]
+name = "mimo_bot"
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+aes = "0.8"
+base64 = "0.22"
+cfb8 = "0.8"
+crossterm = "0.29"
+flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
+p384 = { version = "0.13", features = ["ecdh", "ecdsa", "pkcs8"] }
+rand = "0.8"
+rand_core = { version = "0.6", features = ["getrandom"] }
+rusty-leveldb = "4.0.1"
+ctrlc = "3.4"
+sha2 = "0.10"
+actix-web = "4.4"
+actix-rt = "2.9"
+tokio = { version = "1.35", features = ["full"] }
+serde_json = "1.0"
+serde = { version = "1.0", features = ["derive"] }
+open = "5.0"
