@@ -566,7 +566,11 @@ impl Client {
 
     fn handle_nack(&mut self, buf: &[u8]) -> io::Result<()> {
         for seq in parse_ack_records(buf) {
-            self.resend_pending_seq(seq)?;
+            if let Some(pending) = self.pending.remove(&seq) {
+                if pending.sends < 5 {
+                    self.resend_pending_datagram(seq, pending)?;
+                }
+            }
         }
         Ok(())
     }
@@ -907,7 +911,7 @@ impl Client {
         let count = self.text_line_counts.entry(line.clone()).or_insert(0);
         *count = count.saturating_add(1);
         self.last_text_line = line.clone();
-        if self.show_output.load(Ordering::Relaxed) && *count == 1 {
+        if self.show_output.load(Ordering::Relaxed) {
             let colored = mc_to_ansi(&line);
             println!("{colored}");
             io::stdout().flush().ok();
@@ -1227,22 +1231,29 @@ impl Client {
 
     fn resend(&mut self) -> io::Result<()> {
         let now = Instant::now();
-        let due: Vec<u32> = self.pending.iter()
+        let stale: Vec<u32> = self.pending.iter()
             .filter_map(|(seq, pending)| {
-                if pending.sends < 5 && now.duration_since(pending.last_sent) >= Duration::from_millis(800) {
+                let age = now.duration_since(pending.last_sent);
+                if pending.sends >= 5 || age >= Duration::from_secs(5) {
                     Some(*seq)
-                } else { None }
+                } else if age >= Duration::from_millis(800) {
+                    Some(*seq)
+                } else {
+                    None
+                }
             })
             .collect();
-        for seq in due {
-            self.resend_pending_seq(seq)?;
+        for seq in stale {
+            if let Some(pending) = self.pending.remove(&seq) {
+                if pending.sends < 5 {
+                    let _ = self.resend_pending_datagram(seq, pending);
+                }
+            }
         }
         Ok(())
     }
 
-    fn resend_pending_seq(&mut self, old_seq: u32) -> io::Result<()> {
-        let Some(mut pending) = self.pending.remove(&old_seq) else { return Ok(()) };
-        if pending.sends >= 5 { return Ok(()); }
+    fn resend_pending_datagram(&mut self, old_seq: u32, mut pending: PendingDatagram) -> io::Result<()> {
         let new_seq = self.seq;
         self.seq = self.seq.wrapping_add(1);
         let mut datagram = Vec::with_capacity(4 + pending.frame_bytes.len());

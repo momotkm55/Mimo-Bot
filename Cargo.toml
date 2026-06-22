@@ -1,6 +1,6 @@
 [package]
 name = "mimo-bot"
-version = "2.0.0"
+version = "2.1.0"
 edition = "2021"
 description = "Проект на Rust для запуска ботов на серверах Minecraft Pocket Edition 1.1.5"
 authors = ["momotkm55"]
