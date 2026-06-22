@@ -148,6 +148,9 @@ pub struct Client {
     pub last_movement_at: Option<Instant>,
     pub movement_enabled: bool,
     pub show_output: Arc<AtomicBool>,
+    pub last_recv_at: Option<Instant>,
+    pub keepalive_timeout_secs: u64,
+    pub dump_enabled: bool,
 }
 
 impl Client {
@@ -458,7 +461,14 @@ impl Client {
 
             match self.recv() {
                 Ok(buf) => self.on_packet(&buf)?,
-                Err(e) if e.kind() == io::ErrorKind::WouldBlock || e.kind() == io::ErrorKind::TimedOut => {}
+                Err(e) if e.kind() == io::ErrorKind::WouldBlock || e.kind() == io::ErrorKind::TimedOut => {
+                    if let Some(last) = self.last_recv_at {
+                        if last.elapsed() >= Duration::from_secs(self.keepalive_timeout_secs) {
+                            err(&format!("keepalive timeout: нет данных {} сек", self.keepalive_timeout_secs));
+                            self.disconnected = true;
+                        }
+                    }
+                }
                 Err(e) => return Err(e),
             }
             self.maybe_mark_spawned_fallback();
@@ -900,6 +910,7 @@ impl Client {
         if self.show_output.load(Ordering::Relaxed) && *count == 1 {
             let colored = mc_to_ansi(&line);
             println!("{colored}");
+            io::stdout().flush().ok();
         }
     }
 
@@ -944,6 +955,7 @@ impl Client {
         if line.is_empty() { return; }
         if self.show_output.load(Ordering::Relaxed) {
             println!("{line}");
+            io::stdout().flush().ok();
         }
         self.event_log.push_back(trim_for_log(&line, 220));
         while self.event_log.len() > 12 {
@@ -1082,9 +1094,7 @@ impl Client {
         if let Some(last_auth) = self.last_auth_transition_at {
             if last_auth.elapsed() < Duration::from_millis(self.post_auth_delay_ms) { return Ok(()); }
         }
-        if !self.pending.is_empty() {
-            let should_log = self.last_chat_wait_log_at.map(|last| last.elapsed() >= Duration::from_secs(3)).unwrap_or(true);
-            if should_log { self.last_chat_wait_log_at = Some(Instant::now()); }
+        if self.pending.len() > 16 {
             return Ok(());
         }
         if let Some(message) = self.pending_chat.pop_front() {
@@ -1123,6 +1133,7 @@ impl Client {
     }
 
     fn dump_mcpe(&mut self, dir: &str, payload: &[u8]) -> io::Result<()> {
+        if !self.dump_enabled { return Ok(()); }
         let id = payload.first().copied().unwrap_or(0xff);
         let name = packet_name(id);
         writeln!(self.dump, "{:>8}ms {dir:<3} 0x{id:02x} {name:<32} len={} {}", self.elapsed_ms(), payload.len(), describe_bytes(payload))
@@ -1172,6 +1183,8 @@ impl Client {
         let count = chunks.len() as u32;
         let _ = (payload.len(), count, max_payload, split_id);
 
+        let base_ord = self.ord_idx;
+
         for (index, chunk) in chunks.into_iter().enumerate() {
             let mut datagram = Vec::new();
             datagram.push(0x80);
@@ -1185,7 +1198,7 @@ impl Client {
                 self.rel_idx = self.rel_idx.wrapping_add(1);
             }
             if reliability == 1 || reliability == 3 || reliability == 4 {
-                put_triad_le(&mut datagram, self.ord_idx);
+                put_triad_le(&mut datagram, base_ord);
                 datagram.push(0);
             }
             put_u32_be(&mut datagram, count);
@@ -1324,6 +1337,7 @@ impl Client {
             }
         };
         buf.truncate(len);
+        self.last_recv_at = Some(Instant::now());
         if from.ip() != self.server.ip() {
             return Err(io::Error::new(io::ErrorKind::InvalidData, format!("пришел пакет с левого адреса {from}")));
         }
@@ -1332,6 +1346,7 @@ impl Client {
     }
 
     fn dump_raw_udp(&mut self, dir: &str, payload: &[u8]) -> io::Result<()> {
+        if !self.dump_enabled { return Ok(()); }
         let id = payload.first().copied().unwrap_or(0xff);
         writeln!(self.raw_dump, "{:>8}ms {dir:<3} 0x{id:02x} {name:<28} len={} {}", self.elapsed_ms(), payload.len(), describe_bytes(payload), name = raknet_packet_name(id))
     }
@@ -1369,6 +1384,11 @@ impl Client {
 
     fn join_frame(&mut self, mut frame: Frame) -> Option<Frame> {
         let Some(split) = frame.split else { return Some(frame); };
+
+        if self.splits.len() > 20 {
+            self.splits.clear();
+        }
+
         let buffer = self.splits.entry(split.id).or_insert_with(|| SplitBuffer { parts: vec![None; split.count as usize] });
         if split.index as usize >= buffer.parts.len() { return None; }
         buffer.parts[split.index as usize] = Some(std::mem::take(&mut frame.payload));
